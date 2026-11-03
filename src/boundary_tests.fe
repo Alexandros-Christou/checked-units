@@ -1,0 +1,107 @@
+use ingot::{
+    ArithmeticError,
+    Fixed6,
+    Metre,
+    Millimetre,
+    Millisecond,
+    Quantity,
+    Rounding,
+    Second,
+    fixed6_div,
+    fixed6_mul,
+    max_raw,
+    metres_to_millimetres,
+    milliseconds_to_seconds,
+    millimetres_to_metres,
+    seconds_to_milliseconds,
+}
+
+#[test]
+fn time_round_trip_and_lossy_scale() {
+    match seconds_to_milliseconds(value: Quantity::new(raw: 86400, unit: Second {})) {
+        Ok(ms) => {
+            assert!(ms.raw() == 86400000)
+            match milliseconds_to_seconds(value: ms, rounding: Rounding::Exact) {
+                Ok(s) => assert!(s.raw() == 86400),
+                Err(_) => assert!(false),
+            }
+        },
+        Err(_) => assert!(false),
+    }
+    match milliseconds_to_seconds(
+        value: Quantity::new(raw: 1500, unit: Millisecond {}),
+        rounding: Rounding::NearestEven,
+    ) {
+        Ok(s) => assert!(s.raw() == 2),
+        Err(_) => assert!(false),
+    }
+}
+
+#[test]
+fn conversion_largest_safe_boundary() {
+    let limit = max_raw() / 1000
+    match metres_to_millimetres(value: Quantity::new(raw: limit, unit: Metre {})) {
+        Ok(mm) => assert!(mm.raw() == limit * 1000),
+        Err(_) => assert!(false),
+    }
+    match metres_to_millimetres(value: Quantity::new(raw: limit + 1, unit: Metre {})) {
+        Err(ArithmeticError::Overflow) => {},
+        _ => assert!(false),
+    }
+    match seconds_to_milliseconds(value: Quantity::new(raw: limit + 1, unit: Second {})) {
+        Err(ArithmeticError::Overflow) => {},
+        _ => assert!(false),
+    }
+}
+
+#[test]
+fn conversion_rounding_and_exactness() {
+    match millimetres_to_metres(
+        value: Quantity::new(raw: 2501, unit: Millimetre {}),
+        rounding: Rounding::NearestEven,
+    ) {
+        Ok(m) => assert!(m.raw() == 3),
+        Err(_) => assert!(false),
+    }
+    match milliseconds_to_seconds(
+        value: Quantity::new(raw: 1, unit: Millisecond {}),
+        rounding: Rounding::Exact,
+    ) {
+        Err(ArithmeticError::Inexact) => {},
+        _ => assert!(false),
+    }
+}
+
+#[test]
+fn fixed6_zero_denominator_and_identity() {
+    match fixed6_div(
+        a: Quantity::new(raw: 1, unit: Fixed6 {}),
+        b: Quantity::new(raw: 0, unit: Fixed6 {}),
+        rounding: Rounding::Exact,
+    ) {
+        Err(ArithmeticError::DivisionByZero) => {},
+        _ => assert!(false),
+    }
+    match fixed6_mul(
+        a: Quantity::new(raw: max_raw(), unit: Fixed6 {}),
+        b: Quantity::new(raw: 1000000, unit: Fixed6 {}),
+        rounding: Rounding::Exact,
+    ) {
+        Ok(q) => assert!(q.raw() == max_raw()),
+        Err(_) => assert!(false),
+    }
+}
+
+#[test]
+fn zero_quantity_identities() {
+    match Quantity::new(raw: max_raw(), unit: Metre {})
+        .checked_add(other: Quantity::new(raw: 0, unit: Metre {})) {
+        Ok(q) => assert!(q.raw() == max_raw()),
+        Err(_) => assert!(false),
+    }
+    match Quantity::new(raw: 0, unit: Metre {})
+        .checked_sub(other: Quantity::new(raw: 0, unit: Metre {})) {
+        Ok(q) => assert!(q.raw() == 0),
+        Err(_) => assert!(false),
+    }
+}

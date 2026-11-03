@@ -1,0 +1,154 @@
+use checked_units::{
+    ArithmeticError,
+    Fixed6,
+    Metre,
+    Millimetre,
+    Quantity,
+    Rounding,
+    fixed6_div,
+    fixed6_mul,
+    max_raw,
+    metres_to_millimetres,
+    millimetres_to_metres,
+    mul_div,
+}
+use std::io::{Write, host, write, write_char, writeln}
+
+fn number(_ value: u128) uses (w: mut Write) {
+    var remaining = value
+    var digits: [u8; 39] = [0; 39]
+    var length: usize = 0
+    while true {
+        let digit: u8 = (remaining % 10).downcast().unwrap()
+        digits[length] = digit + 48
+        length += 1
+        remaining = remaining / 10
+        if remaining == 0 { break }
+    }
+    while length > 0 {
+        length -= 1
+        write_char(digits[length] as i32)
+    }
+}
+
+fn error(_ value: ArithmeticError) uses (w: mut Write) {
+    match value {
+        ArithmeticError::Overflow => write("Overflow"),
+        ArithmeticError::Underflow => write("Underflow"),
+        ArithmeticError::DivisionByZero => write("DivisionByZero"),
+        ArithmeticError::Inexact => write("Inexact"),
+    }
+}
+
+fn show_raw(_ result: own Result<ArithmeticError, u128>) uses (w: mut Write) {
+    match result {
+        Ok(value) => number(value),
+        Err(reason) => error(reason),
+    }
+    write_char(10)
+}
+
+pub fn main() -> i32 {
+    with (Write = host()) {
+        writeln("Checked Units: native demo")
+
+        write("metres 42 -> millimetres: ")
+        match metres_to_millimetres(value: Quantity::new(raw: 42, unit: Metre {})) {
+            Ok(value) => {
+                assert!(value.raw() == 42000)
+                number(value.raw())
+            },
+            Err(_) => assert!(false),
+        }
+        write_char(10)
+
+        write("2500mm -> metres, exact: ")
+        match millimetres_to_metres(
+            value: Quantity::new(raw: 2500, unit: Millimetre {}),
+            rounding: Rounding::Exact,
+        ) {
+            Err(ArithmeticError::Inexact) => error(ArithmeticError::Inexact),
+            _ => assert!(false),
+        }
+        write_char(10)
+
+        write("fixed6 1.5*2.25, raw: ")
+        match fixed6_mul(
+            a: Quantity::new(raw: 1500000, unit: Fixed6 {}),
+            b: Quantity::new(raw: 2250000, unit: Fixed6 {}),
+            rounding: Rounding::Exact,
+        ) {
+            Ok(value) => {
+                assert!(value.raw() == 3375000)
+                number(value.raw())
+            },
+            Err(_) => assert!(false),
+        }
+        write_char(10)
+
+        write("fixed6 1/3, ceiling, raw: ")
+        match fixed6_div(
+            a: Quantity::new(raw: 1000000, unit: Fixed6 {}),
+            b: Quantity::new(raw: 3000000, unit: Fixed6 {}),
+            rounding: Rounding::Ceiling,
+        ) {
+            Ok(value) => {
+                assert!(value.raw() == 333334)
+                number(value.raw())
+            },
+            Err(_) => assert!(false),
+        }
+        write_char(10)
+
+        write("5/2, nearest-even: ")
+        show_raw(
+            mul_div(
+                a: 5,
+                b: 1,
+                denominator: 2,
+                rounding: Rounding::NearestEven,
+            ),
+        )
+        write("7/2, nearest-even: ")
+        show_raw(
+            mul_div(
+                a: 7,
+                b: 1,
+                denominator: 2,
+                rounding: Rounding::NearestEven,
+            ),
+        )
+        write("max*max/max: ")
+        show_raw(
+            mul_div(
+                a: max_raw(),
+                b: max_raw(),
+                denominator: max_raw(),
+                rounding: Rounding::Exact,
+            ),
+        )
+        write("0*max/1: ")
+        show_raw(
+            mul_div(
+                a: 0,
+                b: max_raw(),
+                denominator: 1,
+                rounding: Rounding::Exact,
+            ),
+        )
+        write("max*2/1: ")
+        show_raw(
+            mul_div(
+                a: max_raw(),
+                b: 2,
+                denominator: 1,
+                rounding: Rounding::Exact,
+            ),
+        )
+        write("0/0: ")
+        show_raw(
+            mul_div(a: 0, b: 1, denominator: 0, rounding: Rounding::Floor),
+        )
+    }
+    0
+}

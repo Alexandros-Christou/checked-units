@@ -1,0 +1,183 @@
+// Original contest implementation begun 3 November 2026.
+// Unsigned quantities: a u128 raw magnitude, plus a compile-time unit marker.
+
+pub enum ArithmeticError {
+    Overflow,
+    Underflow,
+    DivisionByZero,
+    Inexact,
+}
+
+pub enum Rounding {
+    Exact,
+    Floor,
+    Ceiling,
+    NearestEven,
+}
+
+pub struct Metre {}
+pub struct Millimetre {}
+pub struct Second {}
+pub struct Millisecond {}
+pub struct Fixed6 {}
+
+pub struct Quantity<U> { raw: u128, unit: U }
+
+pub fn max_raw() -> u128 {
+    340282366920938463463374607431768211455
+}
+
+impl<U> Quantity<U> {
+    pub fn new(raw: u128, unit: own U) -> Quantity<U> {
+        Quantity { raw, unit }
+    }
+
+    pub fn raw(self) -> u128 {
+        self.raw
+    }
+
+    pub fn checked_add(own self, other: Quantity<U>) -> Result<ArithmeticError, Quantity<U>> {
+        if other.raw > max_raw() - self.raw {
+            Err(ArithmeticError::Overflow)
+        } else {
+            Ok(Quantity { raw: self.raw + other.raw, unit: self.unit })
+        }
+    }
+
+    pub fn checked_sub(own self, other: Quantity<U>) -> Result<ArithmeticError, Quantity<U>> {
+        if other.raw > self.raw {
+            Err(ArithmeticError::Underflow)
+        } else {
+            Ok(Quantity { raw: self.raw - other.raw, unit: self.unit })
+        }
+    }
+}
+
+// The product of two u128 values fits u256 exactly. Bounds are checked before
+// narrowing; no saturating cast or intermediate u128 multiplication is used.
+pub fn mul_div(a: u128, b: u128, denominator: u128, rounding: Rounding) -> Result<
+    ArithmeticError,
+    u128,
+> {
+    if denominator == 0 {
+        return Err(ArithmeticError::DivisionByZero)
+    }
+    let product = (a as u256) * (b as u256)
+    let divisor = denominator as u256
+    let quotient = product / divisor
+    let remainder = product % divisor
+    let increment = match rounding {
+        Rounding::Exact => {
+            if remainder != 0 {
+                return Err(ArithmeticError::Inexact)
+            }
+            false
+        },
+        Rounding::Floor => false,
+        Rounding::Ceiling => remainder != 0,
+        Rounding::NearestEven => {
+            // Comparing r with d-r avoids doubling a large remainder.
+            remainder > divisor - remainder
+                || (remainder == divisor - remainder && quotient % 2 == 1)
+        },
+    }
+    if quotient > max_raw() as u256 || (increment && quotient == max_raw() as u256) {
+        Err(ArithmeticError::Overflow)
+    } else {
+        let checked: Option<u128> = quotient.downcast()
+        match checked {
+            Some(narrowed) => Ok(narrowed + if increment { 1 } else { 0 }),
+            None => Err(ArithmeticError::Overflow),
+        }
+    }
+}
+
+pub fn metres_to_millimetres(value: Quantity<Metre>) -> Result<
+    ArithmeticError,
+    Quantity<Millimetre>,
+> {
+    match mul_div(
+        a: value.raw,
+        b: 1000,
+        denominator: 1,
+        rounding: Rounding::Exact,
+    ) {
+        Ok(raw) => Ok(Quantity::new(raw: raw, unit: Millimetre {})),
+        Err(error) => Err(error),
+    }
+}
+
+pub fn millimetres_to_metres(value: Quantity<Millimetre>, rounding: Rounding) -> Result<
+    ArithmeticError,
+    Quantity<Metre>,
+> {
+    match mul_div(
+        a: value.raw,
+        b: 1,
+        denominator: 1000,
+        rounding: rounding,
+    ) {
+        Ok(raw) => Ok(Quantity::new(raw: raw, unit: Metre {})),
+        Err(error) => Err(error),
+    }
+}
+
+pub fn seconds_to_milliseconds(value: Quantity<Second>) -> Result<
+    ArithmeticError,
+    Quantity<Millisecond>,
+> {
+    match mul_div(
+        a: value.raw,
+        b: 1000,
+        denominator: 1,
+        rounding: Rounding::Exact,
+    ) {
+        Ok(raw) => Ok(Quantity::new(raw: raw, unit: Millisecond {})),
+        Err(error) => Err(error),
+    }
+}
+
+pub fn milliseconds_to_seconds(value: Quantity<Millisecond>, rounding: Rounding) -> Result<
+    ArithmeticError,
+    Quantity<Second>,
+> {
+    match mul_div(
+        a: value.raw,
+        b: 1,
+        denominator: 1000,
+        rounding: rounding,
+    ) {
+        Ok(raw) => Ok(Quantity::new(raw: raw, unit: Second {})),
+        Err(error) => Err(error),
+    }
+}
+
+pub fn fixed6_mul(a: Quantity<Fixed6>, b: Quantity<Fixed6>, rounding: Rounding) -> Result<
+    ArithmeticError,
+    Quantity<Fixed6>,
+> {
+    match mul_div(
+        a: a.raw,
+        b: b.raw,
+        denominator: 1000000,
+        rounding: rounding,
+    ) {
+        Ok(raw) => Ok(Quantity::new(raw: raw, unit: Fixed6 {})),
+        Err(error) => Err(error),
+    }
+}
+
+pub fn fixed6_div(a: Quantity<Fixed6>, b: Quantity<Fixed6>, rounding: Rounding) -> Result<
+    ArithmeticError,
+    Quantity<Fixed6>,
+> {
+    match mul_div(
+        a: a.raw,
+        b: 1000000,
+        denominator: b.raw,
+        rounding: rounding,
+    ) {
+        Ok(raw) => Ok(Quantity::new(raw: raw, unit: Fixed6 {})),
+        Err(error) => Err(error),
+    }
+}

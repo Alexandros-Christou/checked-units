@@ -1,0 +1,6 @@
+[ingot]
+name = "checked_units_demo"
+version = "0.1.0"
+
+[dependencies]
+checked_units = "../.."

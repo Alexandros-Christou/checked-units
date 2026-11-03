@@ -1,0 +1,176 @@
+use ingot::{
+    Quantity,
+    Metre,
+    Millimetre,
+    Fixed6,
+    Rounding,
+    ArithmeticError,
+    mul_div,
+    max_raw,
+    metres_to_millimetres,
+    millimetres_to_metres,
+    fixed6_mul,
+    fixed6_div,
+}
+
+fn value(result: own Result<ArithmeticError, u128>) -> u128 {
+    match result {
+        Ok(raw) => raw,
+        Err(_) => {
+            assert!(false)
+            0
+        },
+    }
+}
+
+#[test]
+fn widened_product_before_division() {
+    assert!(
+        value(
+                result: mul_div(
+                    a: max_raw(),
+                    b: max_raw(),
+                    denominator: max_raw(),
+                    rounding: Rounding::Exact,
+                ),
+            )
+            == max_raw(),
+    )
+}
+
+#[test]
+fn quotient_overflow_is_explicit() {
+    match mul_div(
+        a: max_raw(),
+        b: 2,
+        denominator: 1,
+        rounding: Rounding::Floor,
+    ) {
+        Err(ArithmeticError::Overflow) => {},
+        _ => assert!(false),
+    }
+}
+
+#[test]
+fn rounding_modes_and_ties() {
+    assert!(
+        value(
+                result: mul_div(a: 5, b: 1, denominator: 2, rounding: Rounding::Floor),
+            ) == 2,
+    )
+    assert!(
+        value(
+                result: mul_div(a: 5, b: 1, denominator: 2, rounding: Rounding::Ceiling),
+            ) == 3,
+    )
+    assert!(
+        value(
+                result: mul_div(
+                    a: 5,
+                    b: 1,
+                    denominator: 2,
+                    rounding: Rounding::NearestEven,
+                ),
+            ) == 2,
+    )
+    assert!(
+        value(
+                result: mul_div(
+                    a: 7,
+                    b: 1,
+                    denominator: 2,
+                    rounding: Rounding::NearestEven,
+                ),
+            ) == 4,
+    )
+    match mul_div(a: 5, b: 1, denominator: 2, rounding: Rounding::Exact) {
+        Err(ArithmeticError::Inexact) => {},
+        _ => assert!(false),
+    }
+}
+
+#[test]
+fn zero_denominator_is_explicit_even_for_zero_numerator() {
+    match mul_div(a: 0, b: 0, denominator: 0, rounding: Rounding::Floor) {
+        Err(ArithmeticError::DivisionByZero) => {},
+        _ => assert!(false),
+    }
+}
+
+#[test]
+fn quantity_add_and_subtract() {
+    let total = Quantity::new(raw: 12, unit: Metre {})
+        .checked_add(other: Quantity::new(raw: 3, unit: Metre {}))
+    match total {
+        Ok(q) => assert!(q.raw() == 15),
+        Err(_) => assert!(false),
+    }
+    let difference = Quantity::new(raw: 12, unit: Metre {})
+        .checked_sub(other: Quantity::new(raw: 3, unit: Metre {}))
+    match difference {
+        Ok(q) => assert!(q.raw() == 9),
+        Err(_) => assert!(false),
+    }
+}
+
+#[test]
+fn quantity_boundaries() {
+    let overflow = Quantity::new(raw: max_raw(), unit: Metre {})
+        .checked_add(other: Quantity::new(raw: 1, unit: Metre {}))
+    match overflow {
+        Err(ArithmeticError::Overflow) => {},
+        _ => assert!(false),
+    }
+    let underflow = Quantity::new(raw: 0, unit: Metre {})
+        .checked_sub(other: Quantity::new(raw: 1, unit: Metre {}))
+    match underflow {
+        Err(ArithmeticError::Underflow) => {},
+        _ => assert!(false),
+    }
+}
+
+#[test]
+fn conversion_round_trip() {
+    match metres_to_millimetres(value: Quantity::new(raw: 42, unit: Metre {})) {
+        Ok(mm) => {
+            assert!(mm.raw() == 42000)
+            match millimetres_to_metres(value: mm, rounding: Rounding::Exact) {
+                Ok(m) => assert!(m.raw() == 42),
+                Err(_) => assert!(false),
+            }
+        },
+        Err(_) => assert!(false),
+    }
+}
+
+#[test]
+fn lossy_conversion_must_choose_rounding() {
+    match millimetres_to_metres(
+        value: Quantity::new(raw: 2500, unit: Millimetre {}),
+        rounding: Rounding::Exact,
+    ) {
+        Err(ArithmeticError::Inexact) => {},
+        _ => assert!(false),
+    }
+}
+
+#[test]
+fn fixed_point_example() {
+    // 1.5 * 2.25 = 3.375; scaled integers retain all six decimal places.
+    match fixed6_mul(
+        a: Quantity::new(raw: 1500000, unit: Fixed6 {}),
+        b: Quantity::new(raw: 2250000, unit: Fixed6 {}),
+        rounding: Rounding::Exact,
+    ) {
+        Ok(q) => assert!(q.raw() == 3375000),
+        Err(_) => assert!(false),
+    }
+    match fixed6_div(
+        a: Quantity::new(raw: 1000000, unit: Fixed6 {}),
+        b: Quantity::new(raw: 3000000, unit: Fixed6 {}),
+        rounding: Rounding::Ceiling,
+    ) {
+        Ok(q) => assert!(q.raw() == 333334),
+        Err(_) => assert!(false),
+    }
+}
